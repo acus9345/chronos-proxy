@@ -1,0 +1,1714 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="carbon">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CHRONOS // Local-First API Time Machine &amp; SQLite CoW Inspector</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <style>
+    :root[data-theme="carbon"] {
+      --bg-chassis: #111110;
+      --bg-panel: #181816;
+      --bg-elevated: #201F1D;
+      --bg-hover: #272623;
+      --bg-active: #2E2B26;
+      --border-hairline: #2E2D2A;
+      --border-strong: #45433E;
+      --text-primary: #F2F0E8;
+      --text-secondary: #A8A49B;
+      --text-muted: #6E6B64;
+      --accent-signal: #E85D2A;
+      --accent-signal-soft: rgba(232, 93, 42, 0.16);
+      --accent-ok: #2EAA64;
+      --accent-ok-soft: rgba(46, 170, 100, 0.15);
+      --accent-warn: #D99B26;
+      --accent-warn-soft: rgba(217, 155, 38, 0.16);
+      --accent-err: #E04F44;
+      --accent-err-soft: rgba(224, 79, 68, 0.16);
+      --accent-cow: #4A90E2;
+      --accent-cow-soft: rgba(74, 144, 226, 0.16);
+    }
+
+    :root[data-theme="putty"] {
+      --bg-chassis: #DEDAD0;
+      --bg-panel: #ECE9E0;
+      --bg-elevated: #F6F4EE;
+      --bg-hover: #E2DFD5;
+      --bg-active: #D5D1C5;
+      --border-hairline: #C2BEB2;
+      --border-strong: #8F8B7F;
+      --text-primary: #171615;
+      --text-secondary: #4F4C46;
+      --text-muted: #7B776F;
+      --accent-signal: #D64916;
+      --accent-signal-soft: rgba(214, 73, 22, 0.14);
+      --accent-ok: #197A42;
+      --accent-ok-soft: rgba(25, 122, 66, 0.13);
+      --accent-warn: #B07409;
+      --accent-warn-soft: rgba(176, 116, 9, 0.14);
+      --accent-err: #C43227;
+      --accent-err-soft: rgba(196, 50, 39, 0.14);
+      --accent-cow: #1E62B5;
+      --accent-cow-soft: rgba(30, 98, 181, 0.13);
+    }
+
+    * {
+      box-sizing: border-box;
+      border-color: var(--border-hairline);
+    }
+
+    body {
+      margin: 0;
+      background-color: var(--bg-chassis);
+      color: var(--text-primary);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 13px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    .font-mono-tech {
+      font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .font-display-tech {
+      font-family: 'Space Grotesk', sans-serif;
+      letter-spacing: -0.02em;
+    }
+
+    .hw-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border: 1px solid var(--border-strong);
+      border-bottom-width: 2px;
+      border-radius: 2px;
+      cursor: pointer;
+      user-select: none;
+      transition: transform 60ms ease, background-color 100ms ease, border-color 100ms ease;
+    }
+
+    .hw-btn:hover {
+      background: var(--bg-hover);
+    }
+
+    .hw-btn:active {
+      transform: translateY(1px);
+      border-bottom-width: 1px;
+    }
+
+    .hw-btn-signal {
+      background: var(--accent-signal);
+      color: #FFFFFF;
+      border-color: #B33C10;
+    }
+
+    .hw-btn-signal:hover {
+      background: #F26633;
+    }
+
+    .hw-btn-active {
+      background: var(--accent-signal-soft);
+      color: var(--accent-signal);
+      border-color: var(--accent-signal);
+    }
+
+    input[type="range"].chronos-scrubber {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      background: var(--bg-chassis);
+      border: 1px solid var(--border-strong);
+      border-radius: 1px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type="range"].chronos-scrubber::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 22px;
+      background: var(--accent-signal);
+      border: 1px solid #FFFFFF;
+      border-radius: 1px;
+      cursor: ew-resize;
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--bg-chassis);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-strong);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- TOP HARDWARE INSTRUMENTATION BAR -->
+  <header class="border-b bg-[var(--bg-panel)] px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2">
+        <span class="inline-block w-2.5 h-2.5 bg-[var(--accent-signal)]"></span>
+        <span class="font-display-tech font-bold text-sm tracking-tight">CHRONOS_PROXY</span>
+        <span class="font-mono-tech text-[11px] px-1.5 py-0.5 border bg-[var(--bg-elevated)] text-[var(--text-secondary)]">v0.4.2 // TS-COW</span>
+      </div>
+      <div class="hidden sm:flex items-center gap-2 font-mono-tech text-[11px] text-[var(--text-secondary)] border-l pl-3">
+        <span>TARGET: <strong class="text-[var(--text-primary)]">http://127.0.0.1:4000</strong></span>
+        <span class="text-[var(--text-muted)]">/</span>
+        <span>DB: <strong class="text-[var(--text-primary)]">ledger_prod.sqlite</strong></span>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2">
+      <div id="head-status-badge" class="font-mono-tech text-[11px] px-2 py-1 border flex items-center gap-2">
+        <span id="head-status-dot" class="w-2 h-2 rounded-full bg-[var(--accent-ok)]"></span>
+        <span id="head-status-text">HEAD: LIVE_SYNC</span>
+      </div>
+
+      <label class="hw-btn cursor-pointer" title="When armed, replaying a historical frame injects a simulated upstream fee rounding regression so you can see Replay Drift Detection in action.">
+        <input type="checkbox" id="toggle-drift-bug" class="accent-[var(--accent-signal)]" />
+        <span>FAULT_INJECT: <strong id="drift-bug-label">OFF</strong></span>
+      </label>
+
+      <button type="button" id="btn-theme-toggle" class="hw-btn" title="Switch Chassis Finish (Carbon Anodized / Braun Putty)">
+        <span>CHASSIS:</span>
+        <strong id="theme-label">CARBON</strong>
+      </button>
+
+      <button type="button" id="btn-export-session" class="hw-btn">
+        <span>EXPORT .JSON</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- TIME-MACHINE JOG/SHUTTLE & TIMELINE SCRUBBER DECK -->
+  <section class="border-b bg-[var(--bg-elevated)] px-3 py-2.5">
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+      <div class="flex flex-wrap items-center gap-1.5">
+        <button type="button" id="btn-first-frame" class="hw-btn" title="Jump to Frame 1">
+          <span>|&lt; F01</span>
+        </button>
+        <button type="button" id="btn-prev-frame" class="hw-btn" title="Previous Frame (Shortcut: K)">
+          <span>&lt; PREV [K]</span>
+        </button>
+        <button type="button" id="btn-next-frame" class="hw-btn" title="Next Frame (Shortcut: J)">
+          <span>NEXT [J] &gt;</span>
+        </button>
+        <button type="button" id="btn-latest-frame" class="hw-btn" title="Jump to Latest HEAD">
+          <span>HEAD &gt;|</span>
+        </button>
+
+        <div class="h-4 border-l mx-1"></div>
+
+        <div class="inline-flex border rounded-[2px] overflow-hidden font-mono-tech text-[11px]">
+          <button type="button" id="btn-phase-pre" class="px-2.5 py-1 bg-[var(--bg-panel)] text-[var(--text-secondary)]">
+            T-0 PRE_REQ
+          </button>
+          <button type="button" id="btn-phase-post" class="px-2.5 py-1 bg-[var(--accent-signal)] text-white font-semibold">
+            T+1 POST_REQ
+          </button>
+        </div>
+
+        <button type="button" id="btn-checkout-state" class="hw-btn" title="Atomically restore SQLite file to this exact point in time (Shortcut: C)">
+          <span>CHECKOUT SQLITE [C]</span>
+        </button>
+        <button type="button" id="btn-replay-frame" class="hw-btn hw-btn-signal" title="Restore pre-request SQLite state, re-fire HTTP request, and verify deterministic output (Shortcut: R)">
+          <span>REPLAY &amp; VERIFY [R]</span>
+        </button>
+      </div>
+
+      <div class="flex items-center gap-3 font-mono-tech text-[11px]">
+        <div>
+          <span class="text-[var(--text-muted)]">PLAYHEAD:</span>
+          <strong id="readout-playhead" class="text-[var(--accent-signal)]">frm_0001</strong>
+        </div>
+        <div>
+          <span class="text-[var(--text-muted)]">SNAPSHOT:</span>
+          <strong id="readout-snapshot-hash">#a8f021c9</strong>
+        </div>
+        <div class="hidden md:block">
+          <span class="text-[var(--text-muted)]">CoW RATIO:</span>
+          <strong id="readout-cow-ratio" class="text-[var(--accent-ok)]">3.42x SAVED</strong>
+        </div>
+        <div class="hidden lg:block">
+          <span class="text-[var(--text-muted)]">PHYSICAL STORE:</span>
+          <strong id="readout-store-bytes">36.0 KB</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="space-y-1.5">
+      <div id="timeline-tape-ticks" class="grid grid-cols-6 sm:grid-cols-12 gap-1 pt-0.5"></div>
+      <div class="flex items-center gap-3">
+        <span class="font-mono-tech text-[10px] text-[var(--text-muted)] uppercase">T_ORIGIN</span>
+        <input type="range" id="timeline-scrubber" class="chronos-scrubber" min="0" max="5" value="0" step="1" aria-label="Scrub API Timeline Frames" />
+        <span class="font-mono-tech text-[10px] text-[var(--text-muted)] uppercase">T_HEAD</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATUS TOAST / TELEMETRY BAR -->
+  <div id="telemetry-banner" class="hidden border-b px-3 py-1.5 font-mono-tech text-xs flex items-center justify-between bg-[var(--accent-signal-soft)] text-[var(--text-primary)]">
+    <span id="telemetry-banner-text">Ready.</span>
+    <button type="button" id="btn-close-banner" class="underline text-[11px] ml-4">DISMISS</button>
+  </div>
+
+  <!-- MAIN 3-COLUMN SWISS INSTRUMENTATION GRID -->
+  <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 min-h-0">
+
+    <!-- COLUMN 1 (3 COLS): INTERCEPTED HTTP/WS FRAME TAPE -->
+    <aside class="lg:col-span-3 border-b lg:border-b-0 lg:border-r bg-[var(--bg-panel)] flex flex-col">
+      <div class="p-2.5 border-b flex items-center justify-between gap-2 bg-[var(--bg-elevated)]">
+        <span class="font-mono-tech text-[11px] font-semibold tracking-wider uppercase text-[var(--text-secondary)]">
+          01 // INTERCEPTED TRAFFIC TAPE
+        </span>
+        <span id="frame-count-badge" class="font-mono-tech text-[11px] px-1.5 py-0.2 border bg-[var(--bg-panel)]">6 FRAMES</span>
+      </div>
+
+      <div class="p-2 border-b space-y-2 bg-[var(--bg-panel)]">
+        <input
+          type="text"
+          id="frame-filter-input"
+          placeholder="Filter path, table, or frame id..."
+          class="w-full px-2.5 py-1.5 text-xs font-mono-tech bg-[var(--bg-chassis)] border text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-signal)]"
+        />
+        <div class="flex flex-wrap gap-1" id="method-filter-group">
+          <button type="button" data-filter="ALL" class="filter-pill font-mono-tech text-[10px] px-2 py-0.5 border bg-[var(--accent-signal)] text-white">ALL</button>
+          <button type="button" data-filter="MUTATED" class="filter-pill font-mono-tech text-[10px] px-2 py-0.5 border bg-[var(--bg-elevated)] text-[var(--text-secondary)]">DB_MUTATED</button>
+          <button type="button" data-filter="POST" class="filter-pill font-mono-tech text-[10px] px-2 py-0.5 border bg-[var(--bg-elevated)] text-[var(--text-secondary)]">POST</button>
+          <button type="button" data-filter="PATCH" class="filter-pill font-mono-tech text-[10px] px-2 py-0.5 border bg-[var(--bg-elevated)] text-[var(--text-secondary)]">PATCH</button>
+          <button type="button" data-filter="GET" class="filter-pill font-mono-tech text-[10px] px-2 py-0.5 border bg-[var(--bg-elevated)] text-[var(--text-secondary)]">GET</button>
+          <button type="button" data-filter="ERR" class="filter-pill font-mono-tech text-[10px] px-2 py-0.5 border bg-[var(--bg-elevated)] text-[var(--text-secondary)]">4xx/5xx</button>
+        </div>
+      </div>
+
+      <div id="frame-list-container" class="flex-1 overflow-y-auto divide-y"></div>
+
+      <div class="p-2.5 border-t bg-[var(--bg-elevated)] flex items-center justify-between gap-2">
+        <span class="font-mono-tech text-[11px] text-[var(--text-secondary)]">LIVE UPSTREAM SIM:</span>
+        <button type="button" id="btn-quick-capture" class="hw-btn hw-btn-signal">
+          <span>+ CAPTURE NEW TRANSFER</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- COLUMN 2 (5 COLS): SQLITE 4KB CoW PAGE MAP & ROW MUTATION INSPECTOR -->
+    <section class="lg:col-span-5 border-b lg:border-b-0 lg:border-r bg-[var(--bg-panel)] flex flex-col">
+      <div class="border-b">
+        <div class="p-2.5 border-b flex flex-wrap items-center justify-between gap-2 bg-[var(--bg-elevated)]">
+          <div class="flex items-center gap-2">
+            <span class="font-mono-tech text-[11px] font-semibold tracking-wider uppercase text-[var(--text-secondary)]">
+              02 // SQLITE3 4096B COPY-ON-WRITE PAGE MAP
+            </span>
+          </div>
+          <div class="flex items-center gap-3 font-mono-tech text-[10px]">
+            <span class="flex items-center gap-1"><i class="inline-block w-2.5 h-2.5 bg-[var(--accent-signal)]"></i> DIRTY_WRITE</span>
+            <span class="flex items-center gap-1"><i class="inline-block w-2.5 h-2.5 bg-[var(--accent-cow)]"></i> SHARED_CoW</span>
+            <span class="flex items-center gap-1"><i class="inline-block w-2.5 h-2.5 border bg-[var(--bg-chassis)]"></i> FREE</span>
+          </div>
+        </div>
+
+        <div class="p-3 space-y-3">
+          <div id="sqlite-page-grid" class="grid grid-cols-4 sm:grid-cols-8 gap-1.5"></div>
+
+          <div class="border bg-[var(--bg-chassis)] p-2.5 font-mono-tech text-[11px] space-y-2">
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b pb-1.5">
+              <div>
+                <span class="text-[var(--text-muted)]">INSPECTING PAGE:</span>
+                <strong id="page-inspector-title" class="text-[var(--accent-signal)] ml-1">PAGE 0x00 (OFFSET 0x0000..0x0FFF)</strong>
+              </div>
+              <span id="page-inspector-hash" class="text-[var(--text-secondary)]">SHA256: 7f83b165...</span>
+            </div>
+            <div id="page-inspector-details" class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]"></div>
+            <pre id="page-hex-preview" class="text-[10px] leading-relaxed text-[var(--text-secondary)] overflow-x-auto pt-1 border-t"></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex-1 flex flex-col min-h-0">
+        <div class="p-2 border-b bg-[var(--bg-elevated)] flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-1">
+            <button type="button" id="tab-db-diff" class="hw-btn hw-btn-active">
+              <span>ROW MUTATION DELTA</span>
+              <span id="badge-mutation-count" class="px-1 bg-black/20">3</span>
+            </button>
+            <button type="button" id="tab-db-tables" class="hw-btn">
+              <span>SNAPSHOT TABLE BROWSER</span>
+            </button>
+          </div>
+          <span id="db-state-caption" class="font-mono-tech text-[11px] text-[var(--text-secondary)]">
+            CHG_CTR: 0x0002 -&gt; 0x0003
+          </span>
+        </div>
+
+        <div id="panel-db-diff" class="p-3 flex-1 overflow-y-auto space-y-2.5"></div>
+
+        <div id="panel-db-tables" class="hidden p-3 flex-1 overflow-y-auto space-y-3">
+          <div class="flex flex-wrap items-center gap-1.5" id="table-selector-pills">
+            <button type="button" data-table="accounts" class="table-pill hw-btn hw-btn-active">accounts</button>
+            <button type="button" data-table="ledger_entries" class="table-pill hw-btn">ledger_entries</button>
+            <button type="button" data-table="idempotency_keys" class="table-pill hw-btn">idempotency_keys</button>
+            <button type="button" data-table="webhook_outbox" class="table-pill hw-btn">webhook_outbox</button>
+          </div>
+          <div id="table-browser-grid" class="overflow-x-auto border bg-[var(--bg-chassis)]"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- COLUMN 3 (4 COLS): WIRE PAYLOAD, REPLAY DRIFT VERIFIER & SANDBOX COMPOSER -->
+    <section class="lg:col-span-4 bg-[var(--bg-panel)] flex flex-col">
+      <div class="p-2 border-b bg-[var(--bg-elevated)] flex flex-wrap items-center gap-1">
+        <button type="button" id="tab-right-wire" class="hw-btn hw-btn-active">03 // WIRE PAYLOAD</button>
+        <button type="button" id="tab-right-drift" class="hw-btn">REPLAY DRIFT</button>
+        <button type="button" id="tab-right-sandbox" class="hw-btn">DISPATCH SANDBOX</button>
+        <button type="button" id="tab-right-cli" class="hw-btn">CLI / CURL</button>
+      </div>
+
+      <!-- RIGHT PANEL 1: WIRE PAYLOAD & LATENCY WATERFALL -->
+      <div id="panel-right-wire" class="p-3 flex-1 overflow-y-auto space-y-3">
+        <div class="border bg-[var(--bg-chassis)] p-2.5 space-y-2">
+          <div class="flex items-center justify-between font-mono-tech text-[11px]">
+            <span class="text-[var(--text-secondary)] uppercase">4-STAGE SUB-MS LATENCY WATERFALL</span>
+            <strong id="wire-total-latency" class="text-[var(--accent-signal)]">4.82 ms</strong>
+          </div>
+          <div id="latency-waterfall-bars" class="space-y-1.5 font-mono-tech text-[11px]"></div>
+        </div>
+
+        <div class="flex items-center justify-between border px-2.5 py-1.5 bg-[var(--bg-elevated)] font-mono-tech text-[11px]">
+          <span>PII / SECRET STREAM REDACTION:</span>
+          <label class="inline-flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" id="toggle-redact-secrets" checked class="accent-[var(--accent-signal)]" />
+            <strong id="redact-status-label" class="text-[var(--accent-ok)]">ACTIVE</strong>
+          </label>
+        </div>
+
+        <div class="border bg-[var(--bg-chassis)]">
+          <div class="px-2.5 py-1.5 border-b bg-[var(--bg-elevated)] flex items-center justify-between font-mono-tech text-[11px]">
+            <strong id="wire-req-title">REQUEST // POST /v1/transfers</strong>
+            <span id="wire-req-bytes" class="text-[var(--text-secondary)]">184 B</span>
+          </div>
+          <div class="p-2.5 space-y-2">
+            <div id="wire-req-headers" class="font-mono-tech text-[11px] space-y-0.5 text-[var(--text-secondary)]"></div>
+            <pre id="wire-req-body" class="font-mono-tech text-[11px] p-2 border bg-[var(--bg-panel)] overflow-x-auto text-[var(--text-primary)]"></pre>
+          </div>
+        </div>
+
+        <div class="border bg-[var(--bg-chassis)]">
+          <div class="px-2.5 py-1.5 border-b bg-[var(--bg-elevated)] flex items-center justify-between font-mono-tech text-[11px]">
+            <strong id="wire-res-title">RESPONSE // 201 CREATED</strong>
+            <span id="wire-res-bytes" class="text-[var(--text-secondary)]">212 B</span>
+          </div>
+          <div class="p-2.5 space-y-2">
+            <div id="wire-res-headers" class="font-mono-tech text-[11px] space-y-0.5 text-[var(--text-secondary)]"></div>
+            <pre id="wire-res-body" class="font-mono-tech text-[11px] p-2 border bg-[var(--bg-panel)] overflow-x-auto text-[var(--text-primary)]"></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT PANEL 2: DETERMINISTIC REPLAY DRIFT REPORT -->
+      <div id="panel-right-drift" class="hidden p-3 flex-1 overflow-y-auto space-y-3">
+        <div class="border p-3 bg-[var(--bg-chassis)] space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-mono-tech text-xs font-semibold uppercase">DETERMINISTIC REPLAY VERIFIER</span>
+            <button type="button" id="btn-run-replay-inline" class="hw-btn hw-btn-signal">
+              <span>EXECUTE REPLAY NOW</span>
+            </button>
+          </div>
+          <p class="text-xs text-[var(--text-secondary)]">
+            Restores SQLite to <code id="drift-pre-snap-code" class="font-mono-tech text-[var(--text-primary)]">preSnapshotId</code>, re-executes the captured HTTP request against the upstream handler, and compares HTTP status, normalized JSON properties, and SQLite row mutations.
+          </p>
+        </div>
+
+        <div id="drift-report-container" class="space-y-3"></div>
+      </div>
+
+      <!-- RIGHT PANEL 3: LIVE API DISPATCH SANDBOX -->
+      <div id="panel-right-sandbox" class="hidden p-3 flex-1 overflow-y-auto space-y-3">
+        <div class="border p-3 bg-[var(--bg-chassis)] space-y-3">
+          <div class="font-mono-tech text-xs font-semibold uppercase text-[var(--accent-signal)]">
+            INTERACTIVE UPSTREAM REQUEST COMPOSER
+          </div>
+          <p class="text-xs text-[var(--text-secondary)]">
+            Dispatch a live request through ChronosProxy. The engine captures a pre-request CoW snapshot, executes the transaction against the in-memory SQLite ledger, records dirty 4KB pages, and appends the new frame to the timeline.
+          </p>
+
+          <div class="space-y-2">
+            <label class="block font-mono-tech text-[11px] text-[var(--text-secondary)]">PRESET SCENARIO</label>
+            <select id="sandbox-preset-select" class="w-full px-2.5 py-1.5 font-mono-tech text-xs bg-[var(--bg-panel)] border text-[var(--text-primary)]">
+              <option value="transfer_valid">POST /v1/transfers — Capture $65.00 Order Settlement</option>
+              <option value="transfer_overdraft">POST /v1/transfers — Trigger 422 Insufficient Funds Rollback</option>
+              <option value="freeze_account">PATCH /v1/accounts/acc_customer_09 — Compliance Freeze Account</option>
+              <option value="purge_webhook">DELETE /v1/webhooks/wh_501 — Acknowledge &amp; Delete Outbox Event</option>
+              <option value="list_accounts">GET /v1/accounts — Read-Only Balance Audit (0 Dirty Pages)</option>
+            </select>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2">
+            <div>
+              <label class="block font-mono-tech text-[11px] text-[var(--text-secondary)]">METHOD</label>
+              <input type="text" id="sandbox-method" value="POST" readonly class="w-full px-2 py-1 font-mono-tech text-xs bg-[var(--bg-panel)] border text-[var(--text-primary)]" />
+            </div>
+            <div class="col-span-2">
+              <label class="block font-mono-tech text-[11px] text-[var(--text-secondary)]">ENDPOINT PATH</label>
+              <input type="text" id="sandbox-path" value="/v1/transfers" class="w-full px-2 py-1 font-mono-tech text-xs bg-[var(--bg-panel)] border text-[var(--text-primary)]" />
+            </div>
+          </div>
+
+          <div>
+            <label class="block font-mono-tech text-[11px] text-[var(--text-secondary)]">JSON REQUEST BODY</label>
+            <textarea id="sandbox-body" rows="6" class="w-full p-2 font-mono-tech text-xs bg-[var(--bg-panel)] border text-[var(--text-primary)]"></textarea>
+          </div>
+
+          <button type="button" id="btn-dispatch-sandbox" class="hw-btn hw-btn-signal w-full justify-center py-2">
+            <span>SEND THROUGH CHRONOS PROXY &amp; SNAPSHOT SQLITE</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- RIGHT PANEL 4: CLI & CURL REPRODUCIBILITY -->
+      <div id="panel-right-cli" class="hidden p-3 flex-1 overflow-y-auto space-y-3">
+        <div class="border p-3 bg-[var(--bg-chassis)] space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-mono-tech text-[11px] font-semibold uppercase text-[var(--text-secondary)]">1. TIME-TRAVEL CHECKOUT SQLITE STATE</span>
+            <button type="button" id="btn-copy-cli-checkout" class="hw-btn">COPY</button>
+          </div>
+          <pre id="cli-checkout-cmd" class="font-mono-tech text-[11px] p-2 bg-[var(--bg-panel)] border overflow-x-auto"></pre>
+        </div>
+
+        <div class="border p-3 bg-[var(--bg-chassis)] space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-mono-tech text-[11px] font-semibold uppercase text-[var(--text-secondary)]">2. DETERMINISTIC REPLAY &amp; DRIFT CHECK</span>
+            <button type="button" id="btn-copy-cli-replay" class="hw-btn">COPY</button>
+          </div>
+          <pre id="cli-replay-cmd" class="font-mono-tech text-[11px] p-2 bg-[var(--bg-panel)] border overflow-x-auto"></pre>
+        </div>
+
+        <div class="border p-3 bg-[var(--bg-chassis)] space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-mono-tech text-[11px] font-semibold uppercase text-[var(--text-secondary)]">3. STANDALONE CURL REPRODUCTION</span>
+            <button type="button" id="btn-copy-curl" class="hw-btn">COPY</button>
+          </div>
+          <pre id="cli-curl-cmd" class="font-mono-tech text-[11px] p-2 bg-[var(--bg-panel)] border overflow-x-auto"></pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- FOOTER TELEMETRY BAR -->
+  <footer class="border-t bg-[var(--bg-panel)] px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 font-mono-tech text-[11px] text-[var(--text-secondary)]">
+    <div class="flex items-center gap-3">
+      <span>SQLITE3 MAGIC: <strong class="text-[var(--text-primary)]">0x53514c69746520666f726d6174203300</strong></span>
+      <span class="hidden sm:inline">PAGE_SIZE: <strong class="text-[var(--text-primary)]">4096 B (WAL_MODE=2)</strong></span>
+    </div>
+    <div class="flex items-center gap-3">
+      <span>KEYS: <strong class="text-[var(--text-primary)]">[J/K]</strong> SCRUB</span>
+      <span><strong class="text-[var(--text-primary)]">[C]</strong> CHECKOUT</span>
+      <span><strong class="text-[var(--text-primary)]">[R]</strong> REPLAY</span>
+    </div>
+  </footer>
+
+  <script>
+    // =========================================================================
+    // CHRONOS PROXY — IN-BROWSER COPY-ON-WRITE SQLITE & TIME-MACHINE ENGINE
+    // =========================================================================
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    const PAGE_LABELS = [
+      { idx: 0, role: 'SQLITE_HEADER + SCHEMA', table: 'sqlite_master' },
+      { idx: 1, role: 'B-TREE LEAF // accounts', table: 'accounts' },
+      { idx: 2, role: 'B-TREE INTERIOR // ledger', table: 'ledger_entries' },
+      { idx: 3, role: 'B-TREE LEAF // ledger_p0', table: 'ledger_entries' },
+      { idx: 4, role: 'B-TREE LEAF // ledger_p1', table: 'ledger_entries' },
+      { idx: 5, role: 'INDEX // idx_ledger_acct', table: 'ledger_entries' },
+      { idx: 6, role: 'B-TREE LEAF // idempotency', table: 'idempotency_keys' },
+      { idx: 7, role: 'INDEX // uniq_idem_key', table: 'idempotency_keys' },
+      { idx: 8, role: 'B-TREE LEAF // webhooks', table: 'webhook_outbox' },
+      { idx: 9, role: 'FREELIST TRUNK PAGE', table: 'freelist' },
+      { idx: 10, role: 'WAL FRAME BUFFER #01', table: 'wal_frame' },
+      { idx: 11, role: 'WAL FRAME BUFFER #02', table: 'wal_frame' },
+      { idx: 12, role: 'OVERFLOW PAYLOAD PAGE', table: 'webhook_outbox' },
+      { idx: 13, role: 'STAT4 QUERY PLANNER', table: 'sqlite_stat4' },
+      { idx: 14, role: 'UNALLOCATED SLAB #14', table: 'free' },
+      { idx: 15, role: 'UNALLOCATED SLAB #15', table: 'free' }
+    ];
+
+    function deterministicHash(input) {
+      let h1 = 0xdeadbeef ^ input.length;
+      let h2 = 0x41c6ce57 ^ input.length;
+      for (let i = 0, ch; i < input.length; i++) {
+        ch = input.charCodeAt(i);
+        h1 = Math.imul(h1 ^ ch, 2654435761);
+        h2 = Math.imul(h2 ^ ch, 1597334677);
+      }
+      h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+      h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+      return (h2 >>> 0).toString(16).padStart(8, '0') + (h1 >>> 0).toString(16).padStart(8, '0');
+    }
+
+    function cloneDeep(obj) {
+      return JSON.parse(JSON.stringify(obj));
+    }
+
+    function computeRowMutations(beforeTables, afterTables) {
+      const deltas = [];
+      const tableNames = Array.from(new Set([...Object.keys(beforeTables), ...Object.keys(afterTables)])).sort();
+
+      for (const table of tableNames) {
+        const bRows = beforeTables[table] || [];
+        const aRows = afterTables[table] || [];
+        const bMap = new Map(bRows.map((r, i) => [String(r.id || r.key || i), r]));
+        const aMap = new Map(aRows.map((r, i) => [String(r.id || r.key || i), r]));
+
+        for (const [pk, aRow] of aMap.entries()) {
+          const bRow = bMap.get(pk);
+          if (!bRow) {
+            deltas.push({
+              table,
+              kind: 'INSERT',
+              primaryKey: pk,
+              changes: Object.keys(aRow).map((c) => ({ column: c, before: undefined, after: aRow[c] }))
+            });
+          } else {
+            const changes = [];
+            const cols = Array.from(new Set([...Object.keys(bRow), ...Object.keys(aRow)]));
+            for (const col of cols) {
+              if (JSON.stringify(bRow[col]) !== JSON.stringify(aRow[col])) {
+                changes.push({ column: col, before: bRow[col], after: aRow[col] });
+              }
+            }
+            if (changes.length > 0) {
+              deltas.push({ table, kind: 'UPDATE', primaryKey: pk, changes });
+            }
+          }
+        }
+
+        for (const [pk, bRow] of bMap.entries()) {
+          if (!aMap.has(pk)) {
+            deltas.push({
+              table,
+              kind: 'DELETE',
+              primaryKey: pk,
+              changes: Object.keys(bRow).map((c) => ({ column: c, before: bRow[c], after: undefined }))
+            });
+          }
+        }
+      }
+      return deltas;
+    }
+
+    const state = {
+      theme: 'carbon',
+      selectedFrameIndex: 2,
+      selectedPhase: 'post',
+      selectedPageIndex: 1,
+      selectedTable: 'accounts',
+      activeDbTab: 'diff',
+      activeRightTab: 'wire',
+      methodFilter: 'ALL',
+      searchQuery: '',
+      redactSecrets: true,
+      injectDriftBug: false,
+      checkedOutSnapshotId: null,
+      snapshots: new Map(),
+      uniquePageHashes: new Set(),
+      frames: [],
+      lastDriftReport: null
+    };
+
+    function createSnapshot(tables, changeCounter, dirtyPages) {
+      const pages = [];
+      for (let i = 0; i < 16; i++) {
+        const meta = PAGE_LABELS[i];
+        const isFree = i >= 14;
+        const tableData = tables[meta.table] || { changeCounter: i === 0 ? changeCounter : 1 };
+        const pageSeed = isFree
+          ? 'FREE_PAGE_ZERO_FILL'
+          : `${i}:${meta.role}:${JSON.stringify(tableData)}:${dirtyPages.includes(i) ? changeCounter : 1}`;
+        const sha256 = deterministicHash(pageSeed);
+        if (!isFree) state.uniquePageHashes.add(sha256);
+        pages.push({
+          pageIndex: i,
+          role: meta.role,
+          table: meta.table,
+          byteOffset: i * 4096,
+          sha256,
+          allocated: !isFree,
+          dirtyInStep: dirtyPages.includes(i)
+        });
+      }
+
+      const snapshotId = deterministicHash(pages.map((p) => p.sha256).join('|')).slice(0, 12);
+      const snap = {
+        snapshotId,
+        changeCounter,
+        schemaCookie: 4,
+        pageSize: 4096,
+        allocatedPages: 14,
+        fileSizeBytes: 14 * 4096,
+        pages,
+        tables: cloneDeep(tables)
+      };
+      state.snapshots.set(snapshotId, snap);
+      return snap;
+    }
+
+    function seedInitialTimeline() {
+      let currentTables = {
+        accounts: [
+          { id: 'acc_treasury', owner: 'Platform Treasury', balanceCents: 450000, currency: 'USD', status: 'ACTIVE' },
+          { id: 'acc_merchant_01', owner: 'Kinetix Hardware Co.', balanceCents: 128000, currency: 'USD', status: 'ACTIVE' },
+          { id: 'acc_customer_09', owner: 'M. Lindqvist', balanceCents: 54000, currency: 'USD', status: 'ACTIVE' }
+        ],
+        ledger_entries: [
+          { id: 'ldg_1001', accountId: 'acc_merchant_01', deltaCents: 128000, reason: 'OPENING_SETTLEMENT', createdAt: '2026-11-11T04:10:00Z' }
+        ],
+        idempotency_keys: [
+          { key: 'idem_init_001', endpoint: '/v1/settlements', statusCode: 201, lockedAt: '2026-11-11T04:10:00Z' }
+        ],
+        webhook_outbox: [
+          { id: 'wh_501', eventType: 'account.created', targetUrl: 'https://hooks.kinetix.dev/events', status: 'PENDING', attempts: 1 }
+        ]
+      };
+
+      let changeCtr = 10;
+      let prevSnap = createSnapshot(currentTables, changeCtr, [0, 1, 3, 6, 8]);
+
+      const rawScenarios = [
+        {
+          method: 'GET',
+          path: '/v1/accounts',
+          statusCode: 200,
+          timestamp: '2026-11-11T04:12:04.118Z',
+          latency: { preSnapshotMs: 0.18, upstreamTtfbMs: 1.42, transferMs: 0.24, postSnapshotMs: 0.19, totalMs: 2.03 },
+          reqHeaders: { 'accept': 'application/json', 'authorization': 'Bearer demo_fake_token', 'x-request-id': 'req_01a' },
+          reqBody: '',
+          dirtyPages: [],
+          mutate: () => ({
+            accounts: currentTables.accounts,
+            snapshotChangeCtr: changeCtr
+          })
+        },
+        {
+          method: 'POST',
+          path: '/v1/transfers',
+          statusCode: 201,
+          timestamp: '2026-11-11T04:12:19.402Z',
+          latency: { preSnapshotMs: 0.22, upstreamTtfbMs: 3.18, transferMs: 0.31, postSnapshotMs: 0.64, totalMs: 4.35 },
+          reqHeaders: { 'content-type': 'application/json', 'authorization': 'Bearer demo_fake_token', 'idempotency-key': 'idem_tx_881' },
+          reqBody: JSON.stringify({ fromAccount: 'acc_customer_09', toAccount: 'acc_merchant_01', amountCents: 18500, reason: 'ORD_9920_KEYCAPS', clientSecret: 'demo_fake_value' }, null, 2),
+          dirtyPages: [0, 1, 3, 5, 6, 8, 10],
+          mutate: (tbls) => {
+            tbls.accounts[2].balanceCents -= 18500;
+            tbls.accounts[1].balanceCents += 18500;
+            tbls.ledger_entries.push({ id: 'ldg_1002', accountId: 'acc_merchant_01', deltaCents: 18500, reason: 'ORD_9920_KEYCAPS', createdAt: '2026-11-11T04:12:19Z' });
+            tbls.idempotency_keys.push({ key: 'idem_tx_881', endpoint: '/v1/transfers', statusCode: 201, lockedAt: '2026-11-11T04:12:19Z' });
+            tbls.webhook_outbox.push({ id: 'wh_502', eventType: 'transfer.settled', targetUrl: 'https://hooks.kinetix.dev/events', status: 'PENDING', attempts: 0 });
+            return {
+              transferId: 'ldg_1002',
+              fromAccount: 'acc_customer_09',
+              toAccount: 'acc_merchant_01',
+              amountCents: 18500,
+              remainingBalanceCents: tbls.accounts[2].balanceCents,
+              status: 'SETTLED'
+            };
+          }
+        },
+        {
+          method: 'POST',
+          path: '/v1/transfers',
+          statusCode: 201,
+          timestamp: '2026-11-11T04:13:02.890Z',
+          latency: { preSnapshotMs: 0.21, upstreamTtfbMs: 2.94, transferMs: 0.28, postSnapshotMs: 0.58, totalMs: 4.01 },
+          reqHeaders: { 'content-type': 'application/json', 'authorization': 'Bearer demo_fake_token', 'idempotency-key': 'idem_tx_882' },
+          reqBody: JSON.stringify({ fromAccount: 'acc_customer_09', toAccount: 'acc_treasury', amountCents: 4500, reason: 'PLATFORM_ESCROW_FEE' }, null, 2),
+          dirtyPages: [0, 1, 4, 5, 6, 11],
+          mutate: (tbls) => {
+            tbls.accounts[2].balanceCents -= 4500;
+            tbls.accounts[0].balanceCents += 4500;
+            tbls.ledger_entries.push({ id: 'ldg_1003', accountId: 'acc_treasury', deltaCents: 4500, reason: 'PLATFORM_ESCROW_FEE', createdAt: '2026-11-11T04:13:02Z' });
+            tbls.idempotency_keys.push({ key: 'idem_tx_882', endpoint: '/v1/transfers', statusCode: 201, lockedAt: '2026-11-11T04:13:02Z' });
+            return {
+              transferId: 'ldg_1003',
+              fromAccount: 'acc_customer_09',
+              toAccount: 'acc_treasury',
+              amountCents: 4500,
+              remainingBalanceCents: tbls.accounts[2].balanceCents,
+              status: 'SETTLED'
+            };
+          }
+        },
+        {
+          method: 'POST',
+          path: '/v1/transfers',
+          statusCode: 422,
+          timestamp: '2026-11-11T04:14:11.004Z',
+          latency: { preSnapshotMs: 0.19, upstreamTtfbMs: 1.12, transferMs: 0.15, postSnapshotMs: 0.21, totalMs: 1.67 },
+          reqHeaders: { 'content-type': 'application/json', 'authorization': 'Bearer demo_fake_token' },
+          reqBody: JSON.stringify({ fromAccount: 'acc_customer_09', toAccount: 'acc_merchant_01', amountCents: 95000, reason: 'OVERDRAFT_ATTEMPT' }, null, 2),
+          dirtyPages: [],
+          mutate: (tbls) => ({
+            error: 'INSUFFICIENT_FUNDS',
+            availableCents: tbls.accounts[2].balanceCents,
+            requestedCents: 95000,
+            rolledBack: true
+          })
+        },
+        {
+          method: 'PATCH',
+          path: '/v1/accounts/acc_merchant_01',
+          statusCode: 200,
+          timestamp: '2026-11-11T04:15:30.512Z',
+          latency: { preSnapshotMs: 0.20, upstreamTtfbMs: 2.05, transferMs: 0.19, postSnapshotMs: 0.44, totalMs: 2.88 },
+          reqHeaders: { 'content-type': 'application/json', 'authorization': 'Bearer demo_fake_token' },
+          reqBody: JSON.stringify({ status: 'PAYOUT_VERIFIED' }, null, 2),
+          dirtyPages: [0, 1, 10],
+          mutate: (tbls) => {
+            tbls.accounts[1].status = 'PAYOUT_VERIFIED';
+            return { accountId: 'acc_merchant_01', status: 'PAYOUT_VERIFIED', updated: true };
+          }
+        },
+        {
+          method: 'DELETE',
+          path: '/v1/webhooks/wh_501',
+          statusCode: 200,
+          timestamp: '2026-11-11T04:16:09.771Z',
+          latency: { preSnapshotMs: 0.18, upstreamTtfbMs: 1.88, transferMs: 0.14, postSnapshotMs: 0.49, totalMs: 2.69 },
+          reqHeaders: { 'authorization': 'Bearer demo_fake_token' },
+          reqBody: '',
+          dirtyPages: [0, 8, 9],
+          mutate: (tbls) => {
+            tbls.webhook_outbox = tbls.webhook_outbox.filter((w) => w.id !== 'wh_501');
+            return { deletedWebhookId: 'wh_501', remainingOutboxCount: tbls.webhook_outbox.length };
+          }
+        }
+      ];
+
+      rawScenarios.forEach((sc, idx) => {
+        const preSnap = prevSnap;
+        const nextTables = cloneDeep(preSnap.tables);
+        const resPayload = sc.mutate(nextTables);
+        if (sc.dirtyPages.length > 0) {
+          changeCtr++;
+        }
+        const postSnap = sc.dirtyPages.length > 0
+          ? createSnapshot(nextTables, changeCtr, sc.dirtyPages)
+          : preSnap;
+
+        const rowMutations = computeRowMutations(preSnap.tables, postSnap.tables);
+        const frameId = `frm_${String(idx + 1).padStart(4, '0')}_${deterministicHash(sc.path + idx).slice(0, 6)}`;
+
+        state.frames.push({
+          id: frameId,
+          seq: idx + 1,
+          timestamp: sc.timestamp,
+          method: sc.method,
+          path: sc.path,
+          statusCode: sc.statusCode,
+          latency: sc.latency,
+          reqHeaders: sc.reqHeaders,
+          reqBody: sc.reqBody,
+          resHeaders: {
+            'content-type': 'application/json; charset=utf-8',
+            'x-chronos-frame-id': frameId,
+            'x-chronos-pre-snap': preSnap.snapshotId,
+            'x-chronos-post-snap': postSnap.snapshotId
+          },
+          resBody: JSON.stringify(resPayload, null, 2),
+          preSnapshotId: preSnap.snapshotId,
+          postSnapshotId: postSnap.snapshotId,
+          dirtyPages: sc.dirtyPages,
+          rowMutations
+        });
+
+        prevSnap = postSnap;
+      });
+    }
+
+    function formatRedactedHeader(key, val) {
+      if (!state.redactSecrets) return val;
+      const lower = key.toLowerCase();
+      if (lower.includes('authorization')) return 'Bearer [REDACTED_BY_CHRONOS]';
+      if (lower.includes('cookie') || lower.includes('secret')) return '[REDACTED_BY_CHRONOS]';
+      return val;
+    }
+
+    function formatRedactedJson(rawText) {
+      if (!rawText || !state.redactSecrets) return rawText || '// Empty Payload';
+      try {
+        const parsed = JSON.parse(rawText);
+        const walk = (o) => {
+          if (Array.isArray(o)) return o.map(walk);
+          if (o && typeof o === 'object') {
+            const copy = {};
+            for (const [k, v] of Object.entries(o)) {
+              if (/secret|password|token|apikey/i.test(k)) {
+                copy[k] = '[REDACTED_BY_CHRONOS]';
+              } else {
+                copy[k] = walk(v);
+              }
+            }
+            return copy;
+          }
+          return o;
+        };
+        return JSON.stringify(walk(parsed), null, 2);
+      } catch {
+        return rawText;
+      }
+    }
+
+    function showBanner(msg) {
+      const banner = document.getElementById('telemetry-banner');
+      const text = document.getElementById('telemetry-banner-text');
+      text.textContent = msg;
+      banner.classList.remove('hidden');
+    }
+
+    function getActiveFrame() {
+      return state.frames[state.selectedFrameIndex] || state.frames[0];
+    }
+
+    function getActiveSnapshot() {
+      const frame = getActiveFrame();
+      const snapId = state.selectedPhase === 'pre' ? frame.preSnapshotId : frame.postSnapshotId;
+      return state.snapshots.get(snapId);
+    }
+
+    function renderAll() {
+      const frame = getActiveFrame();
+      const snap = getActiveSnapshot();
+
+      const scrubber = document.getElementById('timeline-scrubber');
+      scrubber.max = String(Math.max(0, state.frames.length - 1));
+      scrubber.value = String(state.selectedFrameIndex);
+
+      document.getElementById('readout-playhead').textContent = `${frame.id} [${state.selectedPhase.toUpperCase()}]`;
+      document.getElementById('readout-snapshot-hash').textContent = `#${snap.snapshotId}`;
+
+      const totalLogicalBytes = state.frames.length * 14 * 4096;
+      const physicalBytes = state.uniquePageHashes.size * 4096;
+      const ratio = physicalBytes > 0 ? (totalLogicalBytes / physicalBytes).toFixed(2) : '1.00';
+      document.getElementById('readout-cow-ratio').textContent = `${ratio}x SAVED`;
+      document.getElementById('readout-store-bytes').textContent = `${(physicalBytes / 1024).toFixed(1)} KB`;
+
+      const preBtn = document.getElementById('btn-phase-pre');
+      const postBtn = document.getElementById('btn-phase-post');
+      if (state.selectedPhase === 'pre') {
+        preBtn.className = 'px-2.5 py-1 bg-[var(--accent-signal)] text-white font-semibold';
+        postBtn.className = 'px-2.5 py-1 bg-[var(--bg-panel)] text-[var(--text-secondary)]';
+      } else {
+        postBtn.className = 'px-2.5 py-1 bg-[var(--accent-signal)] text-white font-semibold';
+        preBtn.className = 'px-2.5 py-1 bg-[var(--bg-panel)] text-[var(--text-secondary)]';
+      }
+
+      const headDot = document.getElementById('head-status-dot');
+      const headText = document.getElementById('head-status-text');
+      if (state.checkedOutSnapshotId) {
+        headDot.className = 'w-2 h-2 rounded-full bg-[var(--accent-warn)]';
+        headText.textContent = `DETACHED_TIME_TRAVEL: #${state.checkedOutSnapshotId.slice(0, 8)}`;
+      } else {
+        headDot.className = 'w-2 h-2 rounded-full bg-[var(--accent-ok)]';
+        headText.textContent = 'HEAD: LIVE_SYNC';
+      }
+
+      renderTimelineTicks();
+      renderFrameList();
+      renderSqlitePageMap(frame, snap);
+      renderDatabaseInspector(frame, snap);
+      renderRightRack(frame, snap);
+    }
+
+    function renderTimelineTicks() {
+      const container = document.getElementById('timeline-tape-ticks');
+      container.innerHTML = '';
+      state.frames.forEach((f, idx) => {
+        const isSelected = idx === state.selectedFrameIndex;
+        const isErr = f.statusCode >= 400;
+        const hasMut = f.rowMutations.length > 0;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `text-left p-1.5 border font-mono-tech text-[10px] transition ${
+          isSelected
+            ? 'border-[var(--accent-signal)] bg-[var(--accent-signal-soft)]'
+            : 'bg-[var(--bg-panel)] hover:bg-[var(--bg-hover)]'
+        }`;
+        btn.innerHTML = `
+          <div class="flex items-center justify-between">
+            <span class="font-bold ${isSelected ? 'text-[var(--accent-signal)]' : ''}">F${String(f.seq).padStart(2, '0')}</span>
+            <span class="${isErr ? 'text-[var(--accent-err)]' : 'text-[var(--accent-ok)]'}">${escapeHtml(f.statusCode)}</span>
+          </div>
+          <div class="truncate text-[var(--text-secondary)]">${escapeHtml(f.method)} ${escapeHtml(f.path)}</div>
+          <div class="mt-0.5 flex items-center justify-between text-[9px] text-[var(--text-muted)]">
+            <span>${escapeHtml(f.latency.totalMs)}ms</span>
+            <span>${hasMut ? `${f.dirtyPages.length}P Δ` : '0P'}</span>
+          </div>
+        `;
+        btn.addEventListener('click', () => {
+          state.selectedFrameIndex = idx;
+          renderAll();
+        });
+        container.appendChild(btn);
+      });
+    }
+
+    function renderFrameList() {
+      const container = document.getElementById('frame-list-container');
+      container.innerHTML = '';
+
+      const filtered = state.frames.filter((f) => {
+        if (state.methodFilter === 'MUTATED' && f.rowMutations.length === 0) return false;
+        if (state.methodFilter === 'ERR' && f.statusCode < 400) return false;
+        if (['POST', 'PATCH', 'GET', 'DELETE'].includes(state.methodFilter) && f.method !== state.methodFilter) {
+          return false;
+        }
+        if (state.searchQuery) {
+          const q = state.searchQuery.toLowerCase();
+          const matchPath = f.path.toLowerCase().includes(q);
+          const matchId = f.id.toLowerCase().includes(q);
+          const matchTable = f.rowMutations.some((m) => m.table.toLowerCase().includes(q));
+          return matchPath || matchId || matchTable;
+        }
+        return true;
+      });
+
+      document.getElementById('frame-count-badge').textContent = `${filtered.length} / ${state.frames.length} FRAMES`;
+
+      filtered.forEach((f) => {
+        const actualIdx = state.frames.findIndex((item) => item.id === f.id);
+        const isSelected = actualIdx === state.selectedFrameIndex;
+        const isErr = f.statusCode >= 400;
+
+        const row = document.createElement('div');
+        row.className = `p-2.5 cursor-pointer transition ${
+          isSelected
+            ? 'bg-[var(--bg-active)] border-l-4 border-l-[var(--accent-signal)]'
+            : 'hover:bg-[var(--bg-hover)]'
+        }`;
+
+        const methodBadgeColor =
+          f.method === 'POST'
+            ? 'text-[var(--accent-signal)] border-[var(--accent-signal)]'
+            : f.method === 'DELETE'
+              ? 'text-[var(--accent-err)] border-[var(--accent-err)]'
+              : f.method === 'PATCH'
+                ? 'text-[var(--accent-warn)] border-[var(--accent-warn)]'
+                : 'text-[var(--accent-cow)] border-[var(--accent-cow)]';
+
+        row.innerHTML = `
+          <div class="flex items-center justify-between gap-2 mb-1">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <span class="font-mono-tech text-[10px] font-bold px-1 border ${methodBadgeColor}">${escapeHtml(f.method)}</span>
+              <span class="font-mono-tech text-xs font-medium truncate">${escapeHtml(f.path)}</span>
+            </div>
+            <span class="font-mono-tech text-[11px] font-semibold ${isErr ? 'text-[var(--accent-err)]' : 'text-[var(--accent-ok)]'}">
+              ${escapeHtml(f.statusCode)}
+            </span>
+          </div>
+          <div class="flex items-center justify-between font-mono-tech text-[10px] text-[var(--text-secondary)]">
+            <span>${escapeHtml(f.id)}</span>
+            <span>${f.latency.totalMs.toFixed(2)} ms</span>
+          </div>
+          <div class="mt-1.5 flex flex-wrap items-center gap-1 font-mono-tech text-[10px]">
+            ${
+              f.rowMutations.length > 0
+                ? `<span class="px-1.5 py-0.2 bg-[var(--accent-signal-soft)] text-[var(--accent-signal)] border border-[var(--accent-signal)]">${f.rowMutations.length} ROW MUTATIONS</span>
+                   <span class="px-1.5 py-0.2 bg-[var(--bg-elevated)] border text-[var(--text-secondary)]">${f.dirtyPages.length} CoW PAGES</span>`
+                : `<span class="px-1.5 py-0.2 bg-[var(--bg-elevated)] border text-[var(--text-muted)]">READ_ONLY (0 DIRTY PAGES)</span>`
+            }
+          </div>
+        `;
+        row.addEventListener('click', () => {
+          state.selectedFrameIndex = actualIdx;
+          renderAll();
+        });
+        container.appendChild(row);
+      });
+    }
+
+    function renderSqlitePageMap(frame, snap) {
+      const grid = document.getElementById('sqlite-page-grid');
+      grid.innerHTML = '';
+
+      snap.pages.forEach((p) => {
+        const isDirtyHere = state.selectedPhase === 'post' && frame.dirtyPages.includes(p.pageIndex);
+        const isSelectedPage = p.pageIndex === state.selectedPageIndex;
+
+        let boxStyle = 'bg-[var(--bg-chassis)] text-[var(--text-muted)]';
+        if (p.allocated) {
+          boxStyle = isDirtyHere
+            ? 'bg-[var(--accent-signal)] text-white font-semibold'
+            : 'bg-[var(--accent-cow-soft)] text-[var(--text-primary)] border-[var(--accent-cow)]';
+        }
+
+        const cell = document.createElement('button');
+        cell.type = 'button';
+        cell.className = `p-1.5 border text-left font-mono-tech text-[10px] transition ${boxStyle} ${
+          isSelectedPage ? 'ring-2 ring-[var(--text-primary)]' : ''
+        }`;
+        cell.innerHTML = `
+          <div class="flex items-center justify-between">
+            <span>P${String(p.pageIndex).padStart(2, '0')}</span>
+            <span>${isDirtyHere ? 'DIRTY' : p.allocated ? 'CoW' : 'FREE'}</span>
+          </div>
+          <div class="text-[9px] truncate opacity-80 mt-0.5">${escapeHtml(p.table)}</div>
+          <div class="text-[9px] opacity-70">#${escapeHtml(p.sha256.slice(0, 6))}</div>
+        `;
+        cell.addEventListener('click', () => {
+          state.selectedPageIndex = p.pageIndex;
+          renderSqlitePageMap(frame, snap);
+        });
+        grid.appendChild(cell);
+      });
+
+      const activePage = snap.pages[state.selectedPageIndex] || snap.pages[0];
+      const hexStart = '0x' + activePage.byteOffset.toString(16).padStart(4, '0').toUpperCase();
+      const hexEnd = '0x' + (activePage.byteOffset + 4095).toString(16).padStart(4, '0').toUpperCase();
+
+      document.getElementById('page-inspector-title').textContent =
+        `PAGE 0x${activePage.pageIndex.toString(16).padStart(2, '0').toUpperCase()} (${hexStart}..${hexEnd}) // ${activePage.role}`;
+      document.getElementById('page-inspector-hash').textContent = `SHA256: ${activePage.sha256}`;
+
+      const details = document.getElementById('page-inspector-details');
+      details.innerHTML = `
+        <div><span class="text-[var(--text-muted)]">CHG_COUNTER:</span> <strong>${escapeHtml(snap.changeCounter)}</strong></div>
+        <div><span class="text-[var(--text-muted)]">SCHEMA_COOKIE:</span> <strong>0x0000000${escapeHtml(snap.schemaCookie)}</strong></div>
+        <div><span class="text-[var(--text-muted)]">ENCODING:</span> <strong>UTF-8 (1)</strong></div>
+        <div><span class="text-[var(--text-muted)]">COW_STATE:</span> <strong>${
+          state.selectedPhase === 'post' && frame.dirtyPages.includes(activePage.pageIndex)
+            ? 'DIRTY_ALLOCATED'
+            : activePage.allocated
+              ? 'DEDUPED_SHARED'
+              : 'UNALLOCATED'
+        }</strong></div>
+      `;
+
+      const sampleData = JSON.stringify(snap.tables[activePage.table] || { header: 'SQLite format 3\\0', changeCounter: snap.changeCounter });
+      const asciiPreview = sampleData.slice(0, 68).padEnd(68, '.');
+      document.getElementById('page-hex-preview').textContent =
+        `${hexStart}  53 51 4c 69 74 65 20 66  6f 72 6d 61 74 20 33 00  |SQLite format 3.|\n` +
+        `0x${(activePage.byteOffset + 16).toString(16).padStart(4, '0').toUpperCase()}  10 00 02 02 00 40 20 20  00 00 00 ${snap.changeCounter.toString(16).padStart(2, '0')} 00 00 00 0e  |.....@  ........|\n` +
+        `0x${(activePage.byteOffset + 32).toString(16).padStart(4, '0').toUpperCase()}  ${asciiPreview}`;
+    }
+
+    function renderDatabaseInspector(frame, snap) {
+      document.getElementById('badge-mutation-count').textContent = String(frame.rowMutations.length);
+      const preSnap = state.snapshots.get(frame.preSnapshotId);
+      const postSnap = state.snapshots.get(frame.postSnapshotId);
+      document.getElementById('db-state-caption').textContent =
+        `CHG_CTR: 0x${preSnap.changeCounter.toString(16).padStart(4, '0')} -> 0x${postSnap.changeCounter.toString(16).padStart(4, '0')}`;
+
+      const diffPanel = document.getElementById('panel-db-diff');
+      const tablesPanel = document.getElementById('panel-db-tables');
+
+      if (state.activeDbTab === 'diff') {
+        diffPanel.classList.remove('hidden');
+        tablesPanel.classList.add('hidden');
+        diffPanel.innerHTML = '';
+
+        if (frame.rowMutations.length === 0) {
+          diffPanel.innerHTML = `
+            <div class="border p-4 bg-[var(--bg-chassis)] font-mono-tech text-xs text-[var(--text-secondary)]">
+              0 SQLITE ROW MUTATIONS RECORDED FOR THIS FRAME.<br/>
+              <span class="text-[11px] text-[var(--text-muted)]">Pre-request snapshot (#${escapeHtml(frame.preSnapshotId)}) and post-request snapshot (#${escapeHtml(frame.postSnapshotId)}) are byte-for-byte identical.</span>
+            </div>
+          `;
+          return;
+        }
+
+        frame.rowMutations.forEach((m) => {
+          const badgeClass =
+            m.kind === 'INSERT'
+              ? 'bg-[var(--accent-ok-soft)] text-[var(--accent-ok)] border-[var(--accent-ok)]'
+              : m.kind === 'DELETE'
+                ? 'bg-[var(--accent-err-soft)] text-[var(--accent-err)] border-[var(--accent-err)]'
+                : 'bg-[var(--accent-warn-soft)] text-[var(--accent-warn)] border-[var(--accent-warn)]';
+
+          const card = document.createElement('div');
+          card.className = 'border bg-[var(--bg-chassis)] p-2.5 font-mono-tech text-xs space-y-1.5';
+          const changesHtml = m.changes
+            .map(
+              (c) => `
+              <div class="grid grid-cols-12 gap-2 py-0.5 border-t text-[11px]">
+                <span class="col-span-4 text-[var(--text-secondary)]">${escapeHtml(c.column)}</span>
+                <span class="col-span-4 text-[var(--accent-err)] line-through truncate">${c.before === undefined ? 'NULL' : escapeHtml(JSON.stringify(c.before))}</span>
+                <span class="col-span-4 text-[var(--accent-ok)] font-semibold truncate">${c.after === undefined ? 'DELETED' : escapeHtml(JSON.stringify(c.after))}</span>
+              </div>
+            `
+            )
+            .join('');
+
+          card.innerHTML = `
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] font-bold px-1.5 py-0.2 border ${badgeClass}">${escapeHtml(m.kind)}</span>
+                <strong class="text-[var(--text-primary)]">${escapeHtml(m.table)}</strong>
+              </div>
+              <span class="text-[11px] text-[var(--text-secondary)]">PK: ${escapeHtml(m.primaryKey)}</span>
+            </div>
+            <div>${changesHtml}</div>
+          `;
+          diffPanel.appendChild(card);
+        });
+      } else {
+        diffPanel.classList.add('hidden');
+        tablesPanel.classList.remove('hidden');
+
+        const rows = snap.tables[state.selectedTable] || [];
+        const grid = document.getElementById('table-browser-grid');
+        if (rows.length === 0) {
+          grid.innerHTML = `<div class="p-3 font-mono-tech text-xs text-[var(--text-muted)]">Table '${escapeHtml(state.selectedTable)}' is empty at snapshot #${escapeHtml(snap.snapshotId)}.</div>`;
+          return;
+        }
+        const cols = Object.keys(rows[0]);
+        const thead = cols.map((c) => `<th class="px-2.5 py-1.5 text-left border-b bg-[var(--bg-elevated)] font-semibold">${escapeHtml(c)}</th>`).join('');
+        const tbody = rows
+          .map(
+            (r) =>
+              `<tr class="border-b hover:bg-[var(--bg-hover)]">${cols
+                .map((c) => `<td class="px-2.5 py-1.5">${escapeHtml(JSON.stringify(r[c]))}</td>`)
+                .join('')}</tr>`
+          )
+          .join('');
+        grid.innerHTML = `
+          <table class="w-full font-mono-tech text-[11px] border-collapse">
+            <thead><tr>${thead}</tr></thead>
+            <tbody>${tbody}</tbody>
+          </table>
+        `;
+      }
+    }
+
+    function renderRightRack(frame, snap) {
+      const panels = {
+        wire: document.getElementById('panel-right-wire'),
+        drift: document.getElementById('panel-right-drift'),
+        sandbox: document.getElementById('panel-right-sandbox'),
+        cli: document.getElementById('panel-right-cli')
+      };
+      const tabs = {
+        wire: document.getElementById('tab-right-wire'),
+        drift: document.getElementById('tab-right-drift'),
+        sandbox: document.getElementById('tab-right-sandbox'),
+        cli: document.getElementById('tab-right-cli')
+      };
+
+      Object.keys(panels).forEach((k) => {
+        if (k === state.activeRightTab) {
+          panels[k].classList.remove('hidden');
+          tabs[k].classList.add('hw-btn-active');
+        } else {
+          panels[k].classList.add('hidden');
+          tabs[k].classList.remove('hw-btn-active');
+        }
+      });
+
+      document.getElementById('wire-total-latency').textContent = `${frame.latency.totalMs.toFixed(2)} ms`;
+      const stages = [
+        { label: '1. PRE_REQ CoW SNAP', ms: frame.latency.preSnapshotMs, color: 'bg-[var(--accent-cow)]' },
+        { label: '2. UPSTREAM TTFB', ms: frame.latency.upstreamTtfbMs, color: 'bg-[var(--accent-signal)]' },
+        { label: '3. STREAM TRANSFER', ms: frame.latency.transferMs, color: 'bg-[var(--accent-ok)]' },
+        { label: '4. POST_REQ CoW DIFF', ms: frame.latency.postSnapshotMs, color: 'bg-[var(--accent-warn)]' }
+      ];
+      const maxMs = Math.max(0.1, frame.latency.totalMs);
+      document.getElementById('latency-waterfall-bars').innerHTML = stages
+        .map((s) => {
+          const pct = Math.min(100, Math.max(4, Math.round((s.ms / maxMs) * 100)));
+          return `
+            <div class="space-y-0.5">
+              <div class="flex justify-between text-[10px]">
+                <span class="text-[var(--text-secondary)]">${escapeHtml(s.label)}</span>
+                <span>${s.ms.toFixed(2)} ms</span>
+              </div>
+              <div class="w-full h-1.5 bg-[var(--bg-panel)] overflow-hidden">
+                <div class="h-full ${s.color}" style="width: ${pct}%"></div>
+              </div>
+            </div>
+          `;
+        })
+        .join('');
+
+      document.getElementById('wire-req-title').textContent = `REQUEST // ${frame.method} ${frame.path}`;
+      document.getElementById('wire-req-bytes').textContent = `${frame.reqBody ? frame.reqBody.length : 0} B`;
+      document.getElementById('wire-req-headers').innerHTML = Object.entries(frame.reqHeaders)
+        .map(([k, v]) => `<div><span class="text-[var(--text-muted)]">${escapeHtml(k)}:</span> <span class="text-[var(--text-primary)]">${escapeHtml(formatRedactedHeader(k, v))}</span></div>`)
+        .join('');
+      document.getElementById('wire-req-body').textContent = formatRedactedJson(frame.reqBody);
+
+      document.getElementById('wire-res-title').textContent = `RESPONSE // HTTP ${frame.statusCode}`;
+      document.getElementById('wire-res-bytes').textContent = `${frame.resBody.length} B`;
+      document.getElementById('wire-res-headers').innerHTML = Object.entries(frame.resHeaders)
+        .map(([k, v]) => `<div><span class="text-[var(--text-muted)]">${escapeHtml(k)}:</span> <span class="text-[var(--text-primary)]">${escapeHtml(v)}</span></div>`)
+        .join('');
+      document.getElementById('wire-res-body').textContent = formatRedactedJson(frame.resBody);
+
+      document.getElementById('drift-pre-snap-code').textContent = `#${frame.preSnapshotId}`;
+      renderDriftReport(frame);
+
+      document.getElementById('cli-checkout-cmd').textContent =
+        `npx chronos checkout ${frame.id} --phase ${state.selectedPhase}`;
+      document.getElementById('cli-replay-cmd').textContent =
+        `npx chronos replay ${frame.id}`;
+      const bodyFlag = frame.reqBody ? ` \\\n  -d '${frame.reqBody.replace(/\n/g, '')}'` : '';
+      document.getElementById('cli-curl-cmd').textContent =
+        `curl -i -X ${frame.method} "http://127.0.0.1:8080${frame.path}" \\\n  -H "Content-Type: application/json"${bodyFlag}`;
+    }
+
+    function renderDriftReport(frame) {
+      const container = document.getElementById('drift-report-container');
+      const report = state.lastDriftReport;
+      if (!report || report.frameId !== frame.id) {
+        container.innerHTML = `
+          <div class="border p-3 bg-[var(--bg-chassis)] font-mono-tech text-xs text-[var(--text-secondary)]">
+            No replay executed yet for <strong>${escapeHtml(frame.id)}</strong>.<br/>
+            Click <strong>[REPLAY &amp; VERIFY]</strong> in the top transport bar or <strong>[EXECUTE REPLAY NOW]</strong> above to time-travel SQLite to <code>#${escapeHtml(frame.preSnapshotId)}</code> and test determinism.
+          </div>
+        `;
+        return;
+      }
+
+      if (report.deterministicMatch) {
+        container.innerHTML = `
+          <div class="border border-[var(--accent-ok)] bg-[var(--accent-ok-soft)] p-3 font-mono-tech text-xs space-y-2">
+            <div class="flex items-center justify-between">
+              <strong class="text-[var(--accent-ok)]">DETERMINISTIC_MATCH // ZERO DRIFT DETECTED</strong>
+              <span>Δ ${escapeHtml(report.latencyDeltaMs)} ms</span>
+            </div>
+            <div class="text-[11px] space-y-1 text-[var(--text-primary)]">
+              <div>• Restored Pre-Snapshot: <code>#${escapeHtml(frame.preSnapshotId)}</code></div>
+              <div>• HTTP Status Match: <code>${escapeHtml(frame.statusCode)} === ${escapeHtml(report.replayedStatus)}</code></div>
+              <div>• Normalized JSON Body Diffs: <code>0 properties drifted</code></div>
+              <div>• SQLite CoW Row Mutations: <code>${escapeHtml(frame.rowMutations.length)} recorded === ${escapeHtml(report.replayedMutations)} replayed</code></div>
+            </div>
+          </div>
+        `;
+      } else {
+        container.innerHTML = `
+          <div class="border border-[var(--accent-err)] bg-[var(--accent-err-soft)] p-3 font-mono-tech text-xs space-y-2">
+            <div class="flex items-center justify-between">
+              <strong class="text-[var(--accent-err)]">DRIFT_DETECTED // NON-DETERMINISTIC REGRESSION</strong>
+              <span>FAULT_INJECTED</span>
+            </div>
+            <div class="text-[11px] space-y-1.5">
+              <div class="p-2 border bg-[var(--bg-chassis)]">
+                <div class="text-[var(--text-secondary)] mb-1">JSON PAYLOAD PROPERTY DIFF:</div>
+                <div>Path: <code>${escapeHtml(report.diffPath)}</code></div>
+                <div class="text-[var(--accent-ok)]">Recorded : ${escapeHtml(report.recordedVal)}</div>
+                <div class="text-[var(--accent-err)]">Replayed : ${escapeHtml(report.replayedVal)}</div>
+              </div>
+              <div class="p-2 border bg-[var(--bg-chassis)]">
+                <div class="text-[var(--text-secondary)] mb-1">SQLITE ROW MUTATION DIVERGENCE:</div>
+                <div>${escapeHtml(report.dbDriftSummary)}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function triggerReplayForCurrentFrame() {
+      const frame = getActiveFrame();
+      state.activeRightTab = 'drift';
+
+      if (!state.injectDriftBug) {
+        state.lastDriftReport = {
+          frameId: frame.id,
+          deterministicMatch: true,
+          replayedStatus: frame.statusCode,
+          latencyDeltaMs: '-0.14',
+          replayedMutations: frame.rowMutations.length
+        };
+        showBanner(`REPLAY PASS: Restored SQLite #${frame.preSnapshotId}, re-fired ${frame.method} ${frame.path} -> 100% deterministic match.`);
+      } else {
+        state.lastDriftReport = {
+          frameId: frame.id,
+          deterministicMatch: false,
+          replayedStatus: frame.statusCode,
+          latencyDeltaMs: '+0.41',
+          diffPath: '$.remainingBalanceCents (Upstream Fee Rounding Regression)',
+          recordedVal: '35500',
+          replayedVal: '35425 (75 cent unrecorded fee drift)',
+          dbDriftSummary: 'Table accounts [PK: acc_customer_09] column balanceCents mutated to 35425 instead of recorded 35500.'
+        };
+        showBanner(`REPLAY DRIFT ALERT: Upstream regression detected when replaying ${frame.id} from snapshot #${frame.preSnapshotId}!`);
+      }
+      renderAll();
+    }
+
+    function dispatchSandboxRequest(method, pathStr, bodyText) {
+      const latestFrame = state.frames[state.frames.length - 1];
+      const preSnap = state.snapshots.get(latestFrame.postSnapshotId);
+      const nextTables = cloneDeep(preSnap.tables);
+
+      let statusCode = 200;
+      let resObj = {};
+      let dirtyPages = [];
+
+      let parsed = {};
+      if (bodyText) {
+        try {
+          parsed = JSON.parse(bodyText);
+        } catch {
+          parsed = {};
+        }
+      }
+
+      if (method === 'POST' && pathStr.startsWith('/v1/transfers')) {
+        const fromId = parsed.fromAccount || 'acc_customer_09';
+        const toId = parsed.toAccount || 'acc_merchant_01';
+        const amount = Number(parsed.amountCents || 6500);
+        const fromAcc = nextTables.accounts.find((a) => a.id === fromId);
+        const toAcc = nextTables.accounts.find((a) => a.id === toId);
+
+        if (!fromAcc || !toAcc) {
+          statusCode = 404;
+          resObj = { error: 'ACCOUNT_NOT_FOUND' };
+        } else if (fromAcc.status === 'FROZEN') {
+          statusCode = 403;
+          resObj = { error: 'ACCOUNT_FROZEN_BY_COMPLIANCE', accountId: fromId };
+        } else if (fromAcc.balanceCents < amount) {
+          statusCode = 422;
+          resObj = { error: 'INSUFFICIENT_FUNDS', availableCents: fromAcc.balanceCents, requestedCents: amount };
+        } else {
+          statusCode = 201;
+          fromAcc.balanceCents -= amount;
+          toAcc.balanceCents += amount;
+          const newId = `ldg_${1001 + nextTables.ledger_entries.length + 1}`;
+          nextTables.ledger_entries.push({
+            id: newId,
+            accountId: toId,
+            deltaCents: amount,
+            reason: parsed.reason || 'LIVE_SANDBOX_TRANSFER',
+            createdAt: new Date().toISOString()
+          });
+          dirtyPages = [0, 1, 4, 5, 10];
+          resObj = {
+            transferId: newId,
+            fromAccount: fromId,
+            toAccount: toId,
+            amountCents: amount,
+            remainingBalanceCents: fromAcc.balanceCents,
+            status: 'SETTLED'
+          };
+        }
+      } else if (method === 'PATCH' && pathStr.startsWith('/v1/accounts/')) {
+        const targetId = pathStr.split('/').pop();
+        const acc = nextTables.accounts.find((a) => a.id === targetId) || nextTables.accounts[2];
+        acc.status = parsed.status || 'FROZEN';
+        dirtyPages = [0, 1, 11];
+        resObj = { accountId: acc.id, status: acc.status, updatedAt: new Date().toISOString() };
+      } else if (method === 'DELETE' && pathStr.startsWith('/v1/webhooks/')) {
+        const whId = pathStr.split('/').pop();
+        const beforeLen = nextTables.webhook_outbox.length;
+        nextTables.webhook_outbox = nextTables.webhook_outbox.filter((w) => w.id !== whId);
+        if (nextTables.webhook_outbox.length === beforeLen && nextTables.webhook_outbox.length > 0) {
+          nextTables.webhook_outbox.pop();
+        }
+        dirtyPages = [0, 8, 9];
+        resObj = { deleted: whId, remainingOutbox: nextTables.webhook_outbox.length };
+      } else {
+        resObj = { accounts: nextTables.accounts, queriedAt: new Date().toISOString() };
+      }
+
+      const nextChangeCtr = dirtyPages.length > 0 ? preSnap.changeCounter + 1 : preSnap.changeCounter;
+      const postSnap = dirtyPages.length > 0
+        ? createSnapshot(nextTables, nextChangeCtr, dirtyPages)
+        : preSnap;
+
+      const seq = state.frames.length + 1;
+      const frameId = `frm_${String(seq).padStart(4, '0')}_${deterministicHash(pathStr + seq + Date.now()).slice(0, 6)}`;
+      const rowMutations = computeRowMutations(preSnap.tables, postSnap.tables);
+
+      const newFrame = {
+        id: frameId,
+        seq,
+        timestamp: new Date().toISOString(),
+        method,
+        path: pathStr,
+        statusCode,
+        latency: { preSnapshotMs: 0.21, upstreamTtfbMs: 2.34, transferMs: 0.22, postSnapshotMs: 0.48, totalMs: 3.25 },
+        reqHeaders: { 'content-type': 'application/json', 'authorization': 'Bearer demo_fake_token' },
+        reqBody: bodyText,
+        resHeaders: {
+          'content-type': 'application/json; charset=utf-8',
+          'x-chronos-frame-id': frameId,
+          'x-chronos-pre-snap': preSnap.snapshotId,
+          'x-chronos-post-snap': postSnap.snapshotId
+        },
+        resBody: JSON.stringify(resObj, null, 2),
+        preSnapshotId: preSnap.snapshotId,
+        postSnapshotId: postSnap.snapshotId,
+        dirtyPages,
+        rowMutations
+      };
+
+      state.frames.push(newFrame);
+      state.selectedFrameIndex = state.frames.length - 1;
+      state.selectedPhase = 'post';
+      state.checkedOutSnapshotId = null;
+      renderAll();
+      showBanner(`CAPTURED ${frameId}: ${method} ${pathStr} -> HTTP ${statusCode} (${rowMutations.length} SQLite row mutations, ${dirtyPages.length} CoW pages dirtied).`);
+    }
+
+    function copyTextToClipboard(text, label) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          showBanner(`COPIED TO CLIPBOARD: ${label}`);
+        }).catch(() => {
+          fallbackCopy(text, label);
+        });
+      } else {
+        fallbackCopy(text, label);
+      }
+    }
+
+    function fallbackCopy(text, label) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        showBanner(`COPIED TO CLIPBOARD: ${label}`);
+      } catch {
+        showBanner(`READY TO COPY: ${label}`);
+      }
+      document.body.removeChild(ta);
+    }
+
+    function updateSandboxPreset() {
+      const preset = document.getElementById('sandbox-preset-select').value;
+      const methodEl = document.getElementById('sandbox-method');
+      const pathEl = document.getElementById('sandbox-path');
+      const bodyEl = document.getElementById('sandbox-body');
+
+      if (preset === 'transfer_valid') {
+        methodEl.value = 'POST';
+        pathEl.value = '/v1/transfers';
+        bodyEl.value = JSON.stringify({ fromAccount: 'acc_customer_09', toAccount: 'acc_merchant_01', amountCents: 6500, reason: 'SUBSCRIPTION_RENEWAL' }, null, 2);
+      } else if (preset === 'transfer_overdraft') {
+        methodEl.value = 'POST';
+        pathEl.value = '/v1/transfers';
+        bodyEl.value = JSON.stringify({ fromAccount: 'acc_customer_09', toAccount: 'acc_merchant_01', amountCents: 850000, reason: 'OVERDRAFT_TEST' }, null, 2);
+      } else if (preset === 'freeze_account') {
+        methodEl.value = 'PATCH';
+        pathEl.value = '/v1/accounts/acc_customer_09';
+        bodyEl.value = JSON.stringify({ status: 'FROZEN', reason: 'RISK_REVIEW_HOLD' }, null, 2);
+      } else if (preset === 'purge_webhook') {
+        methodEl.value = 'DELETE';
+        pathEl.value = '/v1/webhooks/wh_502';
+        bodyEl.value = '';
+      } else {
+        methodEl.value = 'GET';
+        pathEl.value = '/v1/accounts';
+        bodyEl.value = '';
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      seedInitialTimeline();
+      updateSandboxPreset();
+      renderAll();
+
+      document.getElementById('btn-theme-toggle').addEventListener('click', () => {
+        state.theme = state.theme === 'carbon' ? 'putty' : 'carbon';
+        document.documentElement.setAttribute('data-theme', state.theme);
+        document.getElementById('theme-label').textContent = state.theme.toUpperCase();
+      });
+
+      document.getElementById('toggle-drift-bug').addEventListener('change', (e) => {
+        state.injectDriftBug = e.target.checked;
+        document.getElementById('drift-bug-label').textContent = state.injectDriftBug ? 'ARMED' : 'OFF';
+        showBanner(
+          state.injectDriftBug
+            ? 'FAULT INJECTION ARMED: Next replay will simulate an upstream fee calculation bug.'
+            : 'FAULT INJECTION DISARMED: Replays will verify deterministic clean upstream behavior.'
+        );
+      });
+
+      document.getElementById('btn-export-session').addEventListener('click', () => {
+        const blob = new Blob([JSON.stringify({ version: '0.4.2', frames: state.frames }, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `chronos-session-${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showBanner('EXPORTED CHRONOS SESSION ARCHIVE (.JSON)');
+      });
+
+      document.getElementById('timeline-scrubber').addEventListener('input', (e) => {
+        state.selectedFrameIndex = Number(e.target.value);
+        renderAll();
+      });
+
+      document.getElementById('btn-first-frame').addEventListener('click', () => {
+        state.selectedFrameIndex = 0;
+        renderAll();
+      });
+
+      document.getElementById('btn-prev-frame').addEventListener('click', () => {
+        state.selectedFrameIndex = Math.max(0, state.selectedFrameIndex - 1);
+        renderAll();
+      });
+
+      document.getElementById('btn-next-frame').addEventListener('click', () => {
+        state.selectedFrameIndex = Math.min(state.frames.length - 1, state.selectedFrameIndex + 1);
+        renderAll();
+      });
+
+      document.getElementById('btn-latest-frame').addEventListener('click', () => {
+        state.selectedFrameIndex = state.frames.length - 1;
+        state.checkedOutSnapshotId = null;
+        renderAll();
+      });
+
+      document.getElementById('btn-phase-pre').addEventListener('click', () => {
+        state.selectedPhase = 'pre';
+        renderAll();
+      });
+
+      document.getElementById('btn-phase-post').addEventListener('click', () => {
+        state.selectedPhase = 'post';
+        renderAll();
+      });
+
+      document.getElementById('btn-checkout-state').addEventListener('click', () => {
+        const snap = getActiveSnapshot();
+        const frame = getActiveFrame();
+        state.checkedOutSnapshotId = snap.snapshotId;
+        renderAll();
+        showBanner(`SQLITE TIME-TRAVEL CHECKOUT: Restored ledger_prod.sqlite to #${snap.snapshotId} (${frame.id} @ ${state.selectedPhase.toUpperCase()}).`);
+      });
+
+      document.getElementById('btn-replay-frame').addEventListener('click', triggerReplayForCurrentFrame);
+      document.getElementById('btn-run-replay-inline').addEventListener('click', triggerReplayForCurrentFrame);
+
+      document.getElementById('btn-close-banner').addEventListener('click', () => {
+        document.getElementById('telemetry-banner').classList.add('hidden');
+      });
+
+      document.getElementById('frame-filter-input').addEventListener('input', (e) => {
+        state.searchQuery = e.target.value;
+        renderFrameList();
+      });
+
+      document.querySelectorAll('.filter-pill').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          state.methodFilter = btn.getAttribute('data-filter');
+          document.querySelectorAll('.filter-pill').forEach((b) => {
+            b.className = 'filter-pill font-mono-tech text-[10px] px-2 py-0.5 border bg-[var(--bg-elevated)] text-[var(--text-secondary)]';
+          });
+          btn.className = 'filter-pill font-mono-tech text-[10px] px-2 py-0.5 border bg-[var(--accent-signal)] text-white';
+          renderFrameList();
+        });
+      });
+
+      document.getElementById('btn-quick-capture').addEventListener('click', () => {
+        dispatchSandboxRequest(
+          'POST',
+          '/v1/transfers',
+          JSON.stringify({ fromAccount: 'acc_customer_09', toAccount: 'acc_merchant_01', amountCents: 3500, reason: 'QUICK_SETTLEMENT' }, null, 2)
+        );
+      });
+
+      document.getElementById('tab-db-diff').addEventListener('click', () => {
+        state.activeDbTab = 'diff';
+        document.getElementById('tab-db-diff').classList.add('hw-btn-active');
+        document.getElementById('tab-db-tables').classList.remove('hw-btn-active');
+        renderAll();
+      });
+
+      document.getElementById('tab-db-tables').addEventListener('click', () => {
+        state.activeDbTab = 'tables';
+        document.getElementById('tab-db-tables').classList.add('hw-btn-active');
+        document.getElementById('tab-db-diff').classList.remove('hw-btn-active');
+        renderAll();
+      });
+
+      document.querySelectorAll('.table-pill').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          state.selectedTable = btn.getAttribute('data-table');
+          document.querySelectorAll('.table-pill').forEach((b) => b.classList.remove('hw-btn-active'));
+          btn.classList.add('hw-btn-active');
+          renderAll();
+        });
+      });
+
+      ['wire', 'drift', 'sandbox', 'cli'].forEach((tabKey) => {
+        document.getElementById(`tab-right-${tabKey}`).addEventListener('click', () => {
+          state.activeRightTab = tabKey;
+          renderAll();
+        });
+      });
+
+      document.getElementById('toggle-redact-secrets').addEventListener('change', (e) => {
+        state.redactSecrets = e.target.checked;
+        const lbl = document.getElementById('redact-status-label');
+        lbl.textContent = state.redactSecrets ? 'ACTIVE' : 'BYPASSED (RAW)';
+        lbl.className = state.redactSecrets ? 'text-[var(--accent-ok)]' : 'text-[var(--accent-warn)]';
+        renderAll();
+      });
+
+      document.getElementById('sandbox-preset-select').addEventListener('change', updateSandboxPreset);
+      document.getElementById('btn-dispatch-sandbox').addEventListener('click', () => {
+        const m = document.getElementById('sandbox-method').value;
+        const p = document.getElementById('sandbox-path').value;
+        const b = document.getElementById('sandbox-body').value;
+        dispatchSandboxRequest(m, p, b);
+      });
+
+      document.getElementById('btn-copy-cli-checkout').addEventListener('click', () => {
+        copyTextToClipboard(document.getElementById('cli-checkout-cmd').textContent, 'chronos checkout command');
+      });
+      document.getElementById('btn-copy-cli-replay').addEventListener('click', () => {
+        copyTextToClipboard(document.getElementById('cli-replay-cmd').textContent, 'chronos replay command');
+      });
+      document.getElementById('btn-copy-curl').addEventListener('click', () => {
+        copyTextToClipboard(document.getElementById('cli-curl-cmd').textContent, 'cURL reproduction command');
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName || '')) return;
+        if (e.key === 'j' || e.key === 'ArrowRight') {
+          state.selectedFrameIndex = Math.min(state.frames.length - 1, state.selectedFrameIndex + 1);
+          renderAll();
+        } else if (e.key === 'k' || e.key === 'ArrowLeft') {
+          state.selectedFrameIndex = Math.max(0, state.selectedFrameIndex - 1);
+          renderAll();
+        } else if (e.key === 'c') {
+          document.getElementById('btn-checkout-state').click();
+        } else if (e.key === 'r') {
+          triggerReplayForCurrentFrame();
+        }
+      });
+    });
+  </script>
+</body>
+</html>

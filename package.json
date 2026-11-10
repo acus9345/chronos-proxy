@@ -1,0 +1,45 @@
+{
+  "name": "chronos-proxy",
+  "version": "0.4.2",
+  "description": "Local-First API Time Machine: HTTP/WebSocket reverse proxy with Copy-on-Write SQLite page snapshots, sub-ms state scrubbing, and deterministic replay drift detection.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "chronos": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:zero": "node scripts/build-ts.mjs",
+    "start": "node dist/cli.js start",
+    "demo": "node dist/cli.js demo",
+    "test": "node scripts/build-ts.mjs && node --test dist/test/chronos.test.js",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "prepublishOnly": "npm run typecheck && npm run build && npm test"
+  },
+  "keywords": [
+    "time-travel-debugging",
+    "reverse-proxy",
+    "sqlite",
+    "copy-on-write",
+    "api-inspector",
+    "local-first",
+    "deterministic-replay"
+  ],
+  "author": "ChronosProxy Contributors",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.2"
+  },
+  "files": [
+    "dist",
+    "!dist/test",
+    "src/ui",
+    "README.md",
+    "LICENSE"
+  ]
+}
